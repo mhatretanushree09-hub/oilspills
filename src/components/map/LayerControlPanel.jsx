@@ -4,8 +4,6 @@ import { Waves } from 'lucide-react';
 export default function LayerControlPanel({
   layers,
   onToggleLayer,
-  baseMap,
-  onBaseMapChange,
 }) {
   const layerMeta = {
     spill: { label: 'Oil Spill Polygon', color: 'bg-red-500' },
@@ -44,30 +42,6 @@ export default function LayerControlPanel({
                   onChange={() => onToggleLayer(key)}
                   className="rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-900 h-4 w-4"
                 />
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
-            BASE MAP
-          </h2>
-          <div className="space-y-1.5">
-            {['light', 'dark', 'satellite'].map((type) => (
-              <label
-                key={type}
-                className="flex items-center gap-2.5 p-2 rounded hover:bg-slate-800/40 cursor-pointer capitalize text-xs text-slate-300"
-              >
-                <input
-                  type="radio"
-                  name="baseMap"
-                  value={type}
-                  checked={baseMap === type}
-                  onChange={(e) => onBaseMapChange(e.target.value)}
-                  className="border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-900 h-4 w-4"
-                />
-                <span>{type} Map</span>
               </label>
             ))}
           </div>
