@@ -4,11 +4,14 @@ import { Waves } from 'lucide-react';
 export default function LayerControlPanel({
   layers,
   onToggleLayer,
+<<<<<<< HEAD
   baseMap,
   onBaseMapChange,
   onImageUpload,
   isAnalyzingImage,
   imageAnalysisResult,
+=======
+>>>>>>> 306e1aa41a161a681faf31d02ff8ffd575ab9227
 }) {
   const layerMeta = {
     spill: { label: 'Oil Spill Polygon', color: 'bg-red-500' },
@@ -51,6 +54,7 @@ export default function LayerControlPanel({
             ))}
           </div>
         </div>
+<<<<<<< HEAD
 
         <div className="mb-6">
           <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
@@ -131,6 +135,8 @@ export default function LayerControlPanel({
             )}
           </div>
         </div>
+=======
+>>>>>>> 306e1aa41a161a681faf31d02ff8ffd575ab9227
       </div>
 
       <div className="border-t border-slate-800 pt-4 mt-auto">

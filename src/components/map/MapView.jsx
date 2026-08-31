@@ -43,7 +43,6 @@ export default function MapView() {
     wind: true,
   });
 
-  const [baseMap, setBaseMap] = useState('satellite');
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [isVesselListOpen, setIsVesselListOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,10 +73,6 @@ export default function MapView() {
   // ── Handlers ────────────────────────────────────────────────
   const handleToggleLayer = useCallback((key) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
-
-  const handleBaseMapChange = useCallback((value) => {
-    setBaseMap(value);
   }, []);
 
   const handleSelectVessel = useCallback((vessel) => {
@@ -294,11 +289,14 @@ export default function MapView() {
       <LayerControlPanel
         layers={layers}
         onToggleLayer={handleToggleLayer}
+<<<<<<< HEAD
         baseMap={baseMap}
         onBaseMapChange={handleBaseMapChange}
         onImageUpload={handleImageUpload}
         isAnalyzingImage={isAnalyzingImage}
         imageAnalysisResult={imageAnalysisResult}
+=======
+>>>>>>> 306e1aa41a161a681faf31d02ff8ffd575ab9227
       />
 
       <div className="flex-1 relative h-full">
@@ -363,28 +361,11 @@ export default function MapView() {
           zoomControl={true}
           maxZoom={20}
         >
-          {baseMap === 'dark' && (
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              maxNativeZoom={12}
-              maxZoom={20}
-            />
-          )}
-          {baseMap === 'light' && (
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-              maxNativeZoom={16}
-              maxZoom={20}
-            />
-          )}
-          {baseMap === 'satellite' && (
-            <TileLayer
-              url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-              maxNativeZoom={20}
-              maxZoom={20}
-            />
-          )}
+          <TileLayer
+            url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+            maxNativeZoom={20}
+            maxZoom={20}
+          />
 
           <ScaleControl position="bottomleft" imperial={false} />
           <MapController selectedVessel={selectedVessel} activeSpill={activeSpill} />
