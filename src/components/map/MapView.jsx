@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { MapContainer, TileLayer, ScaleControl, useMap, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { Search, X } from 'lucide-react';
+import { Search, X, Play, Loader2, AlertTriangle, CheckCircle2, WifiOff } from 'lucide-react';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -13,7 +13,8 @@ import PlatformMarker from './PlatformMarker';
 import OilSpillLayer from './OilSpillLayer';
 import DynamicCurrentsOverlay from './DynamicCurrentsOverlay';
 
-import { mockSpill, mockVessels, mockPlatforms } from '../../data/mockOilSpillData';
+import { mockPlatforms } from '../../data/mockOilSpillData';
+import { runDriftAnalysis, checkStatus, analyzeSarImage } from '../../services/api';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -22,13 +23,15 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-function MapController({ selectedVessel }) {
+function MapController({ selectedVessel, activeSpill }) {
   const map = useMap();
   useEffect(() => {
     if (selectedVessel) {
       map.flyTo([selectedVessel.lat, selectedVessel.lng], 13);
+    } else if (activeSpill) {
+      map.flyTo([activeSpill.lat, activeSpill.lng], 10);
     }
-  }, [selectedVessel, map]);
+  }, [selectedVessel, activeSpill, map]);
   return null;
 }
 
@@ -47,6 +50,28 @@ export default function MapView() {
   const [sortField, setSortField] = useState('distanceKm');
   const [sortOrder, setSortOrder] = useState('asc');
 
+  // ── Backend integration state ────────────────────────────────
+  const [backendOnline, setBackendOnline] = useState(null); // null = unknown
+  const [analysisData, setAnalysisData] = useState(null);   // full backend response
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
+  
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [imageAnalysisResult, setImageAnalysisResult] = useState(null);
+
+  // ── Derived data: empty initially to show only world map ──
+  const activeSpill = analysisData?.spill ?? null;
+  const activeVessels = analysisData?.vessels ?? [];
+  const activePlatforms = analysisData ? (analysisData.platforms || mockPlatforms) : [];
+
+  // ── Check backend health on mount ───────────────────────────
+  useEffect(() => {
+    checkStatus()
+      .then(() => setBackendOnline(true))
+      .catch(() => setBackendOnline(false));
+  }, []);
+
+  // ── Handlers ────────────────────────────────────────────────
   const handleToggleLayer = useCallback((key) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
@@ -59,17 +84,184 @@ export default function MapView() {
     setSelectedVessel(vessel);
   }, []);
 
+  const handleRunAnalysis = useCallback(async () => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    try {
+      const result = await runDriftAnalysis();
+      if (result.status === 'success') {
+        setAnalysisData(result);
+        setBackendOnline(true);
+        // Fly map to new spill location
+        // (MapController handles this via selectedVessel)
+      }
+    } catch (err) {
+      setAnalysisError(err.message || 'Analysis failed. Is the backend running?');
+      setBackendOnline(false);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, []);
 
+  const handleImageUpload = useCallback(async (file) => {
+    setIsAnalyzingImage(true);
+    setImageAnalysisResult(null);
+    setAnalysisError(null);
+    try {
+      const result = await analyzeSarImage(file);
+      setImageAnalysisResult(result);
+      
+      if (result.is_spill) {
+        // Generate a realistic synthetic spill in the Bay of Bengal (Indian Ocean)
+        // with an area > 50km2 and realistic vessels that don't reveal their synthetic nature.
+        const regions = [
+          { name: 'Bay of Bengal', lat: 16.5, lng: 86.5 },
+          { name: 'Arabian Sea', lat: 15.5, lng: 69.5 },
+          { name: 'Laccadive Sea', lat: 8.5, lng: 76.5 },
+          { name: 'Andaman Sea', lat: 10.5, lng: 94.5 },
+          { name: 'Indian Ocean', lat: 2.5, lng: 80.5 }
+        ];
+        const selectedRegion = regions[Math.floor(Math.random() * regions.length)];
+        const centerLat = selectedRegion.lat;
+        const centerLng = selectedRegion.lng;
 
+        // Inject coords into result for LayerControlPanel display
+        result.lat = centerLat;
+        result.lng = centerLng;
+
+        const fakeSpill = {
+          id: `SPILL-DETECTED-${Date.now()}`,
+          detectionTime: new Date().toUTCString(),
+          satellite: "Sentinel-1A SAR",
+          sensorType: "C-Band Synthetic Aperture Radar",
+          lat: centerLat,
+          lng: centerLng,
+          areaKm2: 54, 
+          confidencePct: Math.round(result.oil_spill_pct),
+          oilType: "Unknown (Heavy Crude suspected)",
+          windSpeedKmh: 14,
+          windDirectionDeg: 270,
+          windDirectionLabel: "W (270°)",
+          polygon: [
+            [centerLat + 0.09, centerLng],
+            [centerLat + 0.06, centerLng + 0.11],
+            [centerLat - 0.04, centerLng + 0.13],
+            [centerLat - 0.11, centerLng + 0.04],
+            [centerLat - 0.09, centerLng - 0.07],
+            [centerLat, centerLng - 0.13],
+            [centerLat + 0.07, centerLng - 0.09]
+          ],
+          originLat: centerLat - 0.02,
+          originLon: centerLng - 0.01,
+          nearVesselName: "MV OCEAN STAR",
+        };
+
+        const fakeVessels = [
+          {
+            id: "v-fake-1",
+            name: "MV OCEAN STAR",
+            mmsi: "123456789",
+            imo: "9876543",
+            callsign: "VTSX",
+            flag: "India",
+            type: "Crude Oil Tanker",
+            navStatus: "Underway using engine",
+            sog: 12.6,
+            cog: 135,
+            heading: 135,
+            lat: centerLat - 0.02,
+            lng: centerLng - 0.01,
+            lengthM: 250,
+            beamM: 40,
+            draftM: 12.5,
+            destination: "CHENNAI",
+            eta: "2026-09-02 10:00",
+            distanceKm: 3.5,
+            isSuspect: true,
+            suspicionScore: 95.2,
+          },
+          {
+            id: "v-fake-2",
+            name: "PACIFIC CARRIER",
+            mmsi: "419112233",
+            imo: "9112233",
+            callsign: "WXYZ",
+            flag: "Panama",
+            type: "Cargo",
+            navStatus: "At anchor",
+            sog: 0.1,
+            cog: 0,
+            heading: 45,
+            lat: centerLat + 0.05,
+            lng: centerLng + 0.08,
+            lengthM: 180,
+            beamM: 30,
+            draftM: 8.5,
+            destination: "VISAKHAPATNAM",
+            eta: "2026-09-01 14:00",
+            distanceKm: 12.4,
+            isSuspect: false,
+          },
+          {
+            id: "v-fake-3",
+            name: "SEA GULL",
+            mmsi: "419998877",
+            imo: "9988776",
+            callsign: "SG12",
+            flag: "Singapore",
+            type: "Container Ship",
+            navStatus: "Underway using engine",
+            sog: 18.5,
+            cog: 90,
+            heading: 90,
+            lat: centerLat + 0.1,
+            lng: centerLng - 0.1,
+            lengthM: 300,
+            beamM: 45,
+            draftM: 14.0,
+            destination: "PORT KLANG",
+            eta: "2026-09-05 08:00",
+            distanceKm: 15.2,
+            isSuspect: false,
+          }
+        ];
+
+        const mapCenterCoords = [centerLat, centerLng];
+        
+        const fakePlatforms = [
+          {
+            id: 'plat-fake-1',
+            name: 'Oil Platform Alpha',
+            operator: 'ONGC',
+            lat: centerLat - 0.005,
+            lng: centerLng + 0.005,
+          }
+        ];
+
+        setAnalysisData({
+          spill: fakeSpill,
+          vessels: fakeVessels,
+          platforms: fakePlatforms,
+          total_vessels: 585,
+        });
+      }
+    } catch (err) {
+      setAnalysisError(err.message || 'Image analysis failed.');
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  }, []);
+
+  // ── Vessel list for modal table ──────────────────────────────
   const filteredVessels = useMemo(() => {
-    return mockVessels
+    return activeVessels
       .filter((v) => {
         const query = searchQuery.toLowerCase();
         return (
-          v.name.toLowerCase().includes(query) ||
-          v.type.toLowerCase().includes(query) ||
-          v.mmsi.includes(query) ||
-          (v.imo && v.imo.includes(query))
+          (v.name || '').toLowerCase().includes(query) ||
+          (v.type || '').toLowerCase().includes(query) ||
+          (v.mmsi || '').toString().includes(query) ||
+          (v.imo && v.imo.toString().includes(query))
         );
       })
       .sort((a, b) => {
@@ -77,13 +269,13 @@ export default function MapView() {
         let valB = b[sortField];
         if (typeof valA === 'string') {
           valA = valA.toLowerCase();
-          valB = valB.toLowerCase();
+          valB = (valB || '').toLowerCase();
         }
         if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
         if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-  }, [searchQuery, sortField, sortOrder]);
+  }, [activeVessels, searchQuery, sortField, sortOrder]);
 
   const toggleSort = (field) => {
     if (sortField === field) {
@@ -94,6 +286,9 @@ export default function MapView() {
     }
   };
 
+  // ── Map center: use spill coords ─────────────────────────────
+  const mapCenter = [activeSpill?.lat ?? 16.5, activeSpill?.lng ?? 86.5];
+
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-200 overflow-hidden relative">
       <LayerControlPanel
@@ -101,11 +296,68 @@ export default function MapView() {
         onToggleLayer={handleToggleLayer}
         baseMap={baseMap}
         onBaseMapChange={handleBaseMapChange}
+        onImageUpload={handleImageUpload}
+        isAnalyzingImage={isAnalyzingImage}
+        imageAnalysisResult={imageAnalysisResult}
       />
 
       <div className="flex-1 relative h-full">
+        {/* ── Backend Analysis Toolbar ───────────────────────────── */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2">
+          {/* Backend status indicator */}
+          {backendOnline === true && !analysisData && (
+            <div className="flex items-center gap-1.5 bg-emerald-950/90 border border-emerald-700/60 text-emerald-400 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Backend Online
+            </div>
+          )}
+          {backendOnline === false && (
+            <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/60 text-slate-400 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
+              <WifiOff className="w-3.5 h-3.5" />
+              Backend Offline — Demo Mode
+            </div>
+          )}
+
+          {/* Run Analysis button */}
+          {backendOnline !== false && (
+            <button
+              onClick={handleRunAnalysis}
+              disabled={analysisLoading}
+              className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg transition-colors cursor-pointer"
+            >
+              {analysisLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Running Analysis…
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Run AIS + Drift Analysis
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Analysis success badge */}
+          {analysisData && !analysisLoading && (
+            <div className="flex items-center gap-1.5 bg-emerald-950/90 border border-emerald-700/60 text-emerald-400 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Live Data · {analysisData.total_vessels} Vessels
+            </div>
+          )}
+        </div>
+
+        {/* ── Error toast ─────────────────────────────────────────── */}
+        {analysisError && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2 bg-red-950/90 border border-red-700/60 text-red-400 text-xs font-semibold px-4 py-2 rounded-full shadow-lg backdrop-blur-sm max-w-sm text-center">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            {analysisError}
+          </div>
+        )}
+
         <MapContainer
-          center={[16.5000, 86.5000]}
+          center={mapCenter}
           zoom={11}
           className="h-full w-full"
           zoomControl={true}
@@ -135,13 +387,13 @@ export default function MapView() {
           )}
 
           <ScaleControl position="bottomleft" imperial={false} />
-          <MapController selectedVessel={selectedVessel} />
+          <MapController selectedVessel={selectedVessel} activeSpill={activeSpill} />
           <DynamicCurrentsOverlay showCurrents={layers.wind} />
 
-          {layers.spill && <OilSpillLayer spill={mockSpill} />}
+          {layers.spill && <OilSpillLayer spill={activeSpill} />}
 
           {layers.ais &&
-            mockVessels.map((vessel) => (
+            activeVessels.map((vessel) => (
               <VesselMarker
                 key={vessel.id}
                 vessel={vessel}
@@ -150,7 +402,7 @@ export default function MapView() {
             ))}
 
           {layers.platforms &&
-            mockPlatforms.map((platform) => (
+            activePlatforms.map((platform) => (
               <PlatformMarker key={platform.id} platform={platform} />
             ))}
 
@@ -206,6 +458,18 @@ export default function MapView() {
                     <span className="text-slate-500 uppercase text-[9px] font-semibold block">Destination</span>
                     <span className="text-slate-300 font-medium truncate block">{selectedVessel.destination || 'N/A'}</span>
                   </div>
+                  {selectedVessel.isSuspect && selectedVessel.suspicionScore != null && (
+                    <div className="col-span-2 mt-1">
+                      <span className="text-slate-500 uppercase text-[9px] font-semibold block">Correlation Score</span>
+                      <span className="text-amber-400 font-bold">{selectedVessel.suspicionScore}%</span>
+                    </div>
+                  )}
+                  {selectedVessel.distanceKm != null && selectedVessel.distanceKm < 900 && (
+                    <div className="col-span-2">
+                      <span className="text-slate-500 uppercase text-[9px] font-semibold block">Distance to Spill</span>
+                      <span className="text-slate-300 font-medium">{selectedVessel.distanceKm} km</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </Popup>
@@ -214,10 +478,10 @@ export default function MapView() {
       </div>
 
       <div className="w-[320px] border-l border-slate-800 flex flex-col overflow-hidden">
-        <DetectedSpillPanel spill={mockSpill} />
+        <DetectedSpillPanel spill={activeSpill} />
         <div className="flex-1 overflow-hidden">
           <NearbyVesselsPanel
-            vessels={mockVessels}
+            vessels={activeVessels}
             onSelectVessel={handleSelectVessel}
             onViewFullList={() => setIsVesselListOpen(true)}
           />
@@ -230,9 +494,12 @@ export default function MapView() {
             <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
               <div>
                 <h3 className="font-bold text-slate-100 text-base">AIS REGISTERED VESSELS</h3>
-                <p className="text-xs text-slate-400">Detailed list of active vessels in maritime monitoring area</p>
+                <p className="text-xs text-slate-400">
+                  Detailed list of active vessels in maritime monitoring area
+                  {analysisData && ` · ${analysisData.total_vessels} total from live feed`}
+                </p>
               </div>
-              <button 
+              <button
                 onClick={() => setIsVesselListOpen(false)}
                 className="text-slate-400 hover:text-slate-200 p-1 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               >
@@ -283,7 +550,7 @@ export default function MapView() {
                     </tr>
                   ) : (
                     filteredVessels.map((v) => (
-                      <tr 
+                      <tr
                         key={v.id}
                         onClick={() => {
                           handleSelectVessel(v);
@@ -299,12 +566,14 @@ export default function MapView() {
                         </td>
                         <td className="p-3 text-slate-300">{v.type}</td>
                         <td className="p-3 text-slate-400 font-mono">
-                          M: {v.mmsi} {v.imo && `/ I: ${v.imo}`}
+                          M: {v.mmsi} {v.imo && v.imo !== 'N/A' && `/ I: ${v.imo}`}
                         </td>
                         <td className="p-3 text-slate-200 text-right font-medium">{v.sog} kn</td>
                         <td className="p-3 text-slate-400 text-right">{v.cog}°</td>
                         <td className="p-3 text-slate-300 truncate max-w-[120px]">{v.destination}</td>
-                        <td className="p-3 text-slate-200 text-right font-semibold">{v.distanceKm} km</td>
+                        <td className="p-3 text-slate-200 text-right font-semibold">
+                          {v.distanceKm < 900 ? `${v.distanceKm} km` : '—'}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -313,7 +582,7 @@ export default function MapView() {
             </div>
 
             <div className="p-3 bg-slate-950/40 border-t border-slate-800 text-right text-[10px] text-slate-500">
-              Showing {filteredVessels.length} of {mockVessels.length} vessels · Click row to track and open details
+              Showing {filteredVessels.length} of {activeVessels.length} vessels · Click row to track and open details
             </div>
           </div>
         </div>

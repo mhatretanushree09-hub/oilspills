@@ -20,7 +20,7 @@ export default function OilSpillLayer({ spill }) {
         direction="center"
         className="!bg-slate-950/90 !border-red-500/40 !text-red-400 !font-semibold !shadow-lg !rounded !px-2 !py-1 text-xs whitespace-nowrap"
       >
-        Detected Oil Spill · Area: {spill.areaKm2} km²
+        Detected Oil Spill - Area: {spill.areaKm2} km²
       </Tooltip>
     </Polygon>
   );

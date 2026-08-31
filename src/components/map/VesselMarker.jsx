@@ -37,7 +37,7 @@ export default function VesselMarker({ vessel, onSelect }) {
             direction="top"
             className="!bg-slate-950 !border-amber-500/40 !text-amber-400 !font-semibold !shadow-lg !rounded !px-2 !py-0.5 text-[10px]"
           >
-            {vessel.name} | MMSI: {vessel.mmsi} | {vessel.sog} kn
+            MMSI: {vessel.mmsi} | {vessel.sog} kn
           </Tooltip>
         )}
       </Marker>

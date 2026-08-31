@@ -6,6 +6,9 @@ export default function LayerControlPanel({
   onToggleLayer,
   baseMap,
   onBaseMapChange,
+  onImageUpload,
+  isAnalyzingImage,
+  imageAnalysisResult,
 }) {
   const layerMeta = {
     spill: { label: 'Oil Spill Polygon', color: 'bg-red-500' },
@@ -70,6 +73,62 @@ export default function LayerControlPanel({
                 <span>{type} Map</span>
               </label>
             ))}
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
+            SAR IMAGE ANALYSIS
+          </h2>
+          <div className="bg-slate-950/40 border border-slate-800/60 p-3 rounded space-y-3">
+            <label className="block">
+              <span className="sr-only">Choose SAR Image</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    onImageUpload(e.target.files[0]);
+                  }
+                }}
+                disabled={isAnalyzingImage}
+                className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-cyan-900/50 file:text-cyan-400 hover:file:bg-cyan-900/80 disabled:opacity-50 cursor-pointer"
+              />
+            </label>
+            {isAnalyzingImage && (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <svg className="animate-spin h-4 w-4 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Analyzing Image...
+              </div>
+            )}
+            {imageAnalysisResult && !isAnalyzingImage && (
+              <div className={`p-2 rounded text-xs border ${imageAnalysisResult.is_spill ? 'bg-red-950/40 border-red-800/60 text-red-200' : 'bg-green-950/40 border-green-800/60 text-green-200'}`}>
+                <div className="font-bold mb-1">{imageAnalysisResult.result}</div>
+                <div className="flex justify-between items-center mb-1">
+                  <span>Oil Spill Probability:</span>
+                  <span className="font-mono font-semibold">{imageAnalysisResult.oil_spill_pct}%</span>
+                </div>
+                {imageAnalysisResult.is_spill && (
+                  <div className="mt-2 pt-2 border-t border-slate-800 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Latitude:</span>
+                      <span className="font-mono font-semibold text-slate-300">
+                        {Math.abs(imageAnalysisResult.lat).toFixed(4)}° {imageAnalysisResult.lat >= 0 ? 'N' : 'S'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Longitude:</span>
+                      <span className="font-mono font-semibold text-slate-300">
+                        {Math.abs(imageAnalysisResult.lng).toFixed(4)}° {imageAnalysisResult.lng >= 0 ? 'E' : 'W'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
